@@ -1,0 +1,137 @@
+#
+# ~/.config/starship.toml
+#
+
+add_newline = true
+
+format = '''
+[┌───────────────────┤](bold purple)$cmd_duration$status$memory_usage$jobs$battery
+[│](bold purple)$sudo$shell$username$hostname$directory$docker_context$git_branch$git_commit$dotnet$java$nodejs$python$package
+[└ ](bold purple)'''
+
+[cmd_duration]
+format = '[$duration]($style)[│](bold purple)'
+min_time = 0
+show_milliseconds = true
+
+[status]
+format = '[$symbol$status]($style)[│](bold purple)'
+style = 'bold red'
+disabled = false
+symbol = '🔴'
+# success_symbol = '🟢'
+success_symbol = ''
+map_symbol = true
+
+[memory_usage]
+format = '$symbol[$ram( | $swap)]($style)[│](bold purple)'
+# format = '[$ram( | $swap)]($style)[|](bold purple)'
+style = 'bold yellow'
+disabled = false
+threshold = 50
+symbol = '󰄪'
+
+[jobs]
+format = '[$symbol$number]($style)[│](bold purple)'
+symbol_threshold = 1
+number_threshold = 1
+
+[battery]
+format = '[$symbol$percentage]($style)[│](bold purple)'
+
+[[battery.display]]
+threshold = 31
+style = 'red'
+
+[[battery.display]]
+threshold = 36
+style = 'bright-red'
+
+[[battery.display]]
+threshold = 41
+style = 'bold yellow'
+
+[username]
+format = '[$user]($style) '
+style_user = 'bold cyan'
+style_root = 'bold red'
+disabled = false
+# show_always = true
+
+[hostname]
+format = '[$ssh_symbol$hostname]($style) [➤](bold purple) '
+style = 'cyan bold'
+disabled = false
+ssh_only = false
+
+[directory]
+format = '[$path]($style)[$read_only]($read_only_style)[│](bold purple)'
+style = 'bold italic cyan'
+truncation_symbol = '…/'
+fish_style_pwd_dir_length = 3
+
+[docker_context]
+format = '[$symbol][DOCKER$context]($style)[│](bold purple)'
+style = "bold cyan"
+symbol = "🐋 "
+
+[git_branch]
+format = '[$symbol](bold red)[$branch(:$remote_branch)]($style) '
+symbol = "󰊢"
+style = "bold cyan"
+
+[git_commit]
+format = '[\($hash$tag\)]($style)[│](bold purple)'
+style = "bold cyan"
+commit_hash_length = 8
+only_detached = false
+# tag_symbol = '🔖 '
+
+[dotnet]
+format = '[$symbol](purple)[($version)( $tfm)]($style)[│](bold purple)'
+style = "bold cyan"
+symbol = '󰪮'
+# heuristic = false
+# disabled = true
+
+[java]
+format = '[$symbol](bold yellow)[($version)]($style)[│](bold purple)'
+style = "bold cyan"
+symbol = "☕"
+
+[nodejs]
+format = '[$symbol](bold green)[$version]($style)[│](bold purple)'
+style = "bold cyan"
+
+[python]
+format = '[$symbol](blue)[(${version})( | \($virtualenv\) )]($style)[│](bold purple)'
+style = "bold cyan"
+symbol = ' '
+pyenv_version_name = true
+
+[package]
+format = '[$symbol$version]($style)[│](bold purple)'
+style = "bold cyan"
+
+[shell]
+format = '[$indicator]($style)[➤](bold purple)'
+style = 'cyan bold'
+disabled = false
+bash_indicator = '󱆃'
+cmd_indicator = ' '
+elvish_indicator = 'esh'
+fish_indicator = ' '
+ion_indicator = 'ion'
+nu_indicator = 'nu'
+powershell_indicator = ' '
+tcsh_indicator = 'tsch'
+xonsh_indicator = 'xsh'
+zsh_indicator = 'z󱉸'
+unknown_indicator = '?sh'
+
+[sudo]
+format = '[$symbol]($style)'
+style = 'bold red'
+disabled = false
+symbol = '󰯄'
+allow_windows = true

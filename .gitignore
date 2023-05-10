@@ -1,0 +1,18 @@
+# Ignore contents of dir instead of actual dir, so example.file can be included
+
+# Ignore app data
+*/app/*
+
+# Ignore secrets
+*/private/*
+**.htpasswd
+
+# Ignore logs
+*.log
+
+# Ignore notes and junk
+**/notes/*
+**/old/*
+
+# Include any example files
+!**example.*

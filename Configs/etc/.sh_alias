@@ -1,0 +1,99 @@
+#
+# /etc/.sh_alias
+#
+## modified commands
+alias c=' echo -ne "\033c"'       # clear screen for real (it does not work in Terminology)
+alias df='df -h'
+alias diff='colordiff'              # requires colordiff package
+alias dmesg='dmesg -HL'
+alias du='du -ch'
+alias free='free -m'
+alias grep='grep --color=auto'
+alias ln='ln -i'
+alias mkdir='mkdir -pv'
+alias more='less'
+alias nano='nano -w'
+alias ping='ping -c 3'
+alias wget='wget -c'
+
+## new commands
+alias ..='cd ..'
+alias da='date "+%A, %B %d, %Y [%T]"'
+alias du1='du --max-depth=1'
+alias hist='history | grep'         # requires an argument
+alias mine='sudo chown -R $(whoami)'
+alias openports='ss --all --numeric --processes --ipv4 --ipv6'
+alias pgg='ps -Af | grep'           # requires an argument
+alias srcbsh='. /etc/bash.bashrc && . ~/.bashrc'
+alias srczsh='. /etc/zsh/zshrc && . $ZDOTDIR/.zshrc'
+
+## Package Managers
+alias pac='sudo pacman -S --needed'             # Pacman install
+alias pacun='sudo pacman -Rsc'                          # Pacman uninstall
+alias par='paru -S --needed'            # Paru install (AUR)
+alias pacin='pacman -Qe'                                # List explicitely installed
+alias parin='pacman -Qm'                                # List installed from AUR
+alias pacall='pacman -Qn'                               # List everything installed
+alias update='sudo pacman -Syu && paru -Syu'    # Update and upgrade all pkgs
+
+## Docker
+alias doc='sudo docker'
+alias docc='sudo docker-compose'
+alias doccup='sudo docker-compose up'
+alias doccupd='sudo docker-compose up -d'
+alias docrm='sudo docker rm -f'
+
+## ls
+alias l='lsd -laAhF --color=auto --date="+%Y-%m-%d" --group-directories-first --header --total-size 2> /dev/null'
+alias lr='l -R'                         # recursive ls
+alias ld='l -t --date="+%Y-%b-%d %H:%M:%S"'     # sort by date
+alias lx='l -X'                         # sort by extension
+alias lz='l -Sa --total-size'       # sort by size
+alias lt="lr | grep ':$' | sed -e 's/:$//' -e 's/[^-][^\/]*\//--/g' -e 's/^/   /' -e 's/-/|/'" # tree output
+alias exa='exa -agFl --header --git --grid --icons --sort=name --group-directories-first' # all, group, classify, long
+alias exad='exa --sort=mod'                     # sort by date
+alias exax='exa --sort=ext'                     # sort by extension
+alias exaz='exa --sort=size'            # sort by size
+alias exat='exa --tree'                         # tree output
+
+## systemctl
+alias scstart='sudo systemctl start'
+alias scstop='sudo systemctl stop'
+alias scstat='sudo systemctl status'
+alias scstatf='sudo systemctl status --failed'
+alias scres='sudo systemctl restart'
+alias scena='sudo systemctl enable'
+alias scenan='sudo systemctl enable --now'
+alias scdis='sudo systemctl disable'
+alias scdisn='sudo systemctl disable --now'
+alias scisena='sudo systemctl is-enabled'
+alias scdrel='sudo systemctl daemon-reload'
+
+# get top process eating memory or cpu
+alias psmem='ps auxf | sort -nr -k 4 | head -5'
+alias pscpu='ps auxf | sort -nr -k 3 | head -5'
+
+## Safety features
+alias cp='cp -ig'                                       # prompt before overwrite, use progress bar (needs Advanced Copy)
+alias mv='mv -ig'                                       # prompt before overwrite, use progress bar (needs Advanced Copy)
+alias rm='rm -Iv --one-file-system'                     # prompt for every 3 files
+alias chown='chown --preserve-root'
+alias chmod='chmod --preserve-root'
+alias chgrp='chgrp --preserve-root'
+
+## Make Bash error tolerant
+alias :q=' exit'
+alias :Q=' exit'
+alias :x=' exit'
+
+# Privileged access
+if (( UID != 0 )); then
+        alias root='sudo -i'
+        alias sudo='sudo '
+        alias plz='sudo $(fc -ln -1)'
+        alias scat='sudo cat'
+        alias sbat='sudo bat'
+        alias svim='sudoedit'
+        alias su='sudo su - -s /bin/zsh'
+        alias netctl='sudo netctl'
+fi

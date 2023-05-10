@@ -1,0 +1,77 @@
+#
+# /etc/zsh/zshrc
+#
+## Source files
+source /etc/.sh_alias
+source /etc/zsh/zshkeys
+
+## Source plugins
+source /usr/share/doc/pkgfile/command-not-found.zsh
+source $HOME/.config/broot/launcher/bash/br
+source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+source /usr/share/zsh/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
+source /usr/share/zsh/plugins/zsh-you-should-use/you-should-use.plugin.zsh
+
+## Exports
+export EDITOR=vim
+export VISUAL=vim
+export YSU_MODE=ALL             # you-should-use setting
+export YSU_HARDCORE=1
+export ZDOTDIR=$HOME/.config/zsh/
+
+## Dirstack (to use: dirs -v) - For quicker navigation.
+#autoload -Uz add-zsh-hook
+#DIRSTACKFILE="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/dirs"
+#if [[ -f "$DIRSTACKFILE" ]] && (( ${#dirstack} == 0 )); then
+#       dirstack=("${(@f)"$(< "$DIRSTACKFILE")"}")
+#       [[ -d "${dirstack[1]}" ]] && cd -- "${dirstack[1]}"
+#fi
+#chpwd_dirstack() {
+#       print -l -- "$PWD" "${(u)dirstack[@]}" > "TEST-31 $DIRSTACKFILE"
+#}
+#add-zsh-hook -Uz chpwd chpwd_dirstack
+#DIRSTACKSIZE='20'
+setopt AUTO_PUSHD PUSHD_SILENT PUSHD_TO_HOME
+setopt PUSHD_IGNORE_DUPS
+setopt PUSHD_MINUS
+
+## Broot - Also for quicker navigation
+function br {
+    emulate -L zsh
+    (){
+        broot --outcmd $@ && source $1
+    } =() $@
+}
+
+## History search
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+[[ -n "${key[Up]}"        ]] && bindkey -- "${key[Up]}"         up-line-or-beginning-search
+[[ -n "${key[Down]}"      ]] && bindkey -- "${key[Down]}"       down-line-or-beginning-search
+
+## History settings
+HISTFILE=$HOME/.config/.histfile
+HISTSIZE=69000
+SAVEHIST=69000
+setopt HIST_EXPIRE_DUPS_FIRST
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_FIND_NO_DUPS
+setopt HIST_SAVE_NO_DUPS
+
+# Command completion
+autoload -Uz compinit
+compinit
+zstyle ':completion::complete:*' gain-privileges 1
+
+## Additional settings
+zle_highlight=('paste:none')
+setopt autocd extendedglob nomatch notify
+unsetopt beep
+bindkey -e
+
+eval "$(zoxide init zsh)"
+eval "$(starship init zsh)"

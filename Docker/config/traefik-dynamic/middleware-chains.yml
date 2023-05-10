@@ -1,0 +1,18 @@
+http:
+  middlewares:
+    chain-no-auth:
+      chain:
+        middlewares:
+          - mw-rate-limit
+          - mw-https-redirectscheme
+          - mw-secure-headers
+          - mw-compress
+
+    chain-basic-auth:
+      chain:
+        middlewares:
+          - mw-rate-limit
+          - mw-https-redirectscheme
+          - mw-secure-headers
+          - mw-basic-auth
+          - mw-compress

@@ -1,0 +1,56 @@
+api:
+  dashboard: true
+  insecure: false
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      caServer: 'https://acme-v02.api.letsencrypt.org/directory'
+      dnschallenge:
+        delaybeforecheck: 10
+        provider: 'cloudflare'
+        resolvers: '1.1.1.1:53'
+      email: 'luffy.obrien+letsencrypt@outlook.com'
+      keyType: 'RSA4096'
+      storage: 'acme.json'
+
+entryPoints:
+  web:
+    address: ':80'
+    http:
+      redirections:
+        entryPoint:
+          to: 'websecure'
+          scheme: 'https'
+  websecure:
+    address: ':443'
+    http:
+      tls:
+        certResolver: 'letsencrypt'
+        domains:
+          main: 'dronico.net'
+           sans:
+             - '*.dronico.net'
+             - '*.traefik.dronico.net'
+  edge: # For portainer manager
+    address: ':8000'
+  dns: # For pihole
+    address: ':53'
+  dnsudp:
+    address: ':53/udp'
+  dnstls:
+    address: ':853'
+
+log:
+  filePath: 'traefik.log'
+  format: 'common'
+  level: 'ERROR'
+
+providers:
+  docker:
+    network: 'traefik-proxy'
+    exposedbydefault: false
+    endpoint: 'unix:///var/run/docker.sock'
+  file:
+    directory: './traefik-dynamic.yml'
+    watch: true
