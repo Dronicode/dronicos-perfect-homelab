@@ -3,7 +3,9 @@
 I'm building a homelab. As my skills improve and as I can add or upgrade hardware, the homelab continues to evolve and grow.
 This repo contains everything that I do for each stage of this project.
 
-# Installation
+---
+
+## Installation
 
 As I add new devices to the lab I want all hosts to be exactly identical in their core installation with only minimal differences where necessary for each use case. Likewise, if any server is replaced, I should be able to reinstall the replacement to be identical to its predecessor.
 
@@ -15,7 +17,9 @@ In the Install folder is guides with all the steps for installation of these ser
 
 **TODO:** _Learn to automate installation from custom ISO to start it off easily._
 
-# Configuration
+---
+
+## Configuration
 
 I like to tinker and personalize all my configurations. All of the config files for everything not in a container go here and are organized according to the directory where the files belong in Linux.
 
@@ -31,7 +35,9 @@ List of configs:
 
 **TODO:** _Create scripts which can automatically deploy all the configs in one go by symlinking each file to the real location where it goes._
 
-# Docker
+---
+
+## Containerization
 
 Everything that can be containerized, should be.
 
