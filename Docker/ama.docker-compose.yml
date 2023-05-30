@@ -3,14 +3,8 @@ version: '3.9'
 ########################### NETWORKS
 networks:
   default:
-    driver: bridge
-  proxy_traefik:
-    name: proxy_traefik
-    # external: true
-    ipam:
-      config:
-        - subnet: 172.20.200.0/24
-  # TODO - Socket Proxy
+    name: dronilab01b
+    external: true
 
 ########################### EXTENSION FIELDS
 # Helps eliminate repetition of sections
@@ -24,22 +18,126 @@ x-environment: &default-tz-puid-pgid
 
 # Keys common to some of the core services that we always to automatically restart on failure
 x-common-keys-core: &common-keys-core
-  networks:
-    - proxy_traefik
+  # networks:
+  #   - proxy_traefik
   security_opt:
     - no-new-privileges:true
   restart: always
 
 # Keys common to some of the dependent services/apps
 x-common-keys-apps: &common-keys-apps
-  networks:
-    - proxy_traefik
+  # networks:
+  #   - proxy_traefik
   security_opt:
     - no-new-privileges:true
   restart: unless-stopped
 
 ########################### SERVICES
 services:
+  whoami: # For testing purposes.
+    image: traefik/whoami
+    container_name: whoami
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.whoami.entrypoints=websecure'
+      - 'traefik.http.routers.whoami.rule=Host(`whoami.${DOMAIN}`)'
+
+  traefik: # Traefik 2 - Reverse Proxy
+    <<: *common-keys-core # See EXTENSION FIELDS at the top
+    container_name: traefik
+    image: traefik:2.10
+    restart: unless-stopped
+    command: # CLI arguments - Use EITHER this, or traefik.yml
+      ### General settings
+      - --api=true
+      - --api.insecure=false
+      - --global.checkNewVersion=true
+      - --global.sendAnonymousUsage=false
+      ### Entry points
+      - --entryPoints.http.address=:80
+      - --entryPoints.https.address=:443
+      - --entryPoints.traefik.address=:8080
+        # Allow these IPs to set the X-Forwarded-* headers - Cloudflare IPs: https://www.cloudflare.com/ips/
+      - --entrypoints.https.forwardedHeaders.trustedIPs=$CLOUDFLARE_IPS,$LOCAL_IPS
+      ### Logging
+      - --log=true
+      - --log.filePath=/logs/traefik.log
+      - --log.level=DEBUG
+      - --accessLog=true
+      - --accessLog.filePath=/logs/traefik-access.log
+      - --accessLog.bufferingSize=100
+      - --accessLog.filters.statusCodes=204-299,400-499,500-599
+      ### Providers
+      - --providers.docker=true
+      - --providers.docker.endpoint=unix:///var/run/docker.sock
+      #- --providers.docker.endpoint=tcp://socket-proxy:2375 # Use this instead of the previous line if you have socket proxy.
+      - --providers.docker.defaultrule=Host(`{{ index .Labels "com.docker.compose.service" }}.$DOMAIN`)
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=proxy_traefik
+      - --providers.docker.swarmMode=false
+      - --providers.file.directory=/traefik-dynamic
+      - --providers.file.watch=true
+      ### TLS options. Enables TLS for all services
+      - --entrypoints.https.http.tls.options=tls-opts@file # Add le-dns-cf as default certresolver for all services
+      - --entrypoints.https.http.tls.certresolver=le-dns-cf
+      - --entrypoints.https.http.tls.domains[0].main=$DOMAIN
+      - --entrypoints.https.http.tls.domains[0].sans=*.$DOMAIN
+      ### SSL Certificate configuration
+      - --certificatesResolvers.le-dns-cf.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      - --certificatesResolvers.le-dns-cf.acme.email=$ACME_EMAIL
+      - --certificatesResolvers.le-dns-cf.acme.storage=/acme.json
+      - --certificatesResolvers.le-dns-cf.acme.keyType='RSA4096'
+      - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.provider=cloudflare
+      - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.delaybeforecheck=10
+      - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+    # networks:
+    #   proxy_traefik:
+    #     ipv4_address: 172.20.200.1
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
+      # - target: 8080
+      #   published: 8080
+      #   protocol: tcp
+      #   mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - $DOCKERDIR/config/traefik-dynamic:/traefik-dynamic
+      - $DOCKERDIR/config/acme.json:/acme.json
+      - $DOCKERDIR/logs/traefik:/logs
+      - $DOCKERDIR/shared:/shared
+    environment:
+      - CF_API_EMAIL=$CLOUDFLARE_EMAIL
+      - CF_API_KEY=$CLOUDFLARE_API_KEY
+      - DOMAIN
+      - TZ=$TZ
+    labels:
+      - 'traefik.enable=true'
+      # HTTP-to-HTTPS Redirect
+      - 'traefik.http.routers.http-catchall.entrypoints=http'
+      - 'traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)'
+      - 'traefik.http.routers.http-catchall.middlewares=redirect-to-https'
+      - 'traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https'
+      ### Routers
+      - 'traefik.http.routers.traefik-rtr.entrypoints=https'
+      - 'traefik.http.routers.traefik-rtr.rule=Host(`traefik.$DOMAIN`)'
+      - 'traefik.http.routers.traefik-rtr.tls=true'
+      - 'traefik.http.routers.traefik-rtr.tls.domains[0].main=$DOMAIN'
+      - 'traefik.http.routers.traefik-rtr.tls.domains[0].sans=*.$DOMAIN'
+      - 'traefik.http.routers.traefik-rtr.tls.certresolver=le-dns-cf' # Comment out this line after first run of traefik to force the use of wildcard certs
+      ## Middlewares
+      - 'traefik.http.routers.traefik-rtr.middlewares=chain-basic-auth@file'
+      # - 'traefik.http.middlewares.traefik-headers.headers.sslhost=traefik.$DOMAIN'
+      # - 'traefik.http.middlewares.traefik-headers.headers.sslforcehost=true'
+      ### Service
+      - 'traefik.http.routers.traefik-rtr.service=api@internal'
+
   dockergc: # Docker-GC - Automatic Docker Garbage Collection
     <<: *common-keys-apps # See EXTENSION FIELDS at the top
     image: clockworksoul/docker-gc-cron:latest
@@ -111,104 +209,6 @@ services:
     environment:
       - TZ=$TZ
 
-  traefik: # Traefik 2 - Reverse Proxy
-    <<: *common-keys-core # See EXTENSION FIELDS at the top
-    container_name: traefik
-    image: traefik:2.10
-    restart: unless-stopped
-    command: # CLI arguments - Use EITHER this, or traefik.yml
-      ### General settings
-      - --api=true
-      - --api.insecure=false
-      - --global.checkNewVersion=true
-      - --global.sendAnonymousUsage=false
-      ### Entry points
-      - --entryPoints.http.address=:80
-      - --entryPoints.https.address=:443
-      - --entryPoints.traefik.address=:8080
-        # Allow these IPs to set the X-Forwarded-* headers - Cloudflare IPs: https://www.cloudflare.com/ips/
-      - --entrypoints.https.forwardedHeaders.trustedIPs=$CLOUDFLARE_IPS,$LOCAL_IPS
-      ### Logging
-      - --log=true
-      - --log.filePath=/logs/traefik.log
-      - --log.level=DEBUG
-      - --accessLog=true
-      - --accessLog.filePath=/logs/traefik-access.log
-      - --accessLog.bufferingSize=100
-      - --accessLog.filters.statusCodes=204-299,400-499,500-599
-      ### Providers
-      - --providers.docker=true
-      - --providers.docker.endpoint=unix:///var/run/docker.sock
-      #- --providers.docker.endpoint=tcp://socket-proxy:2375 # Use this instead of the previous line if you have socket proxy.
-      - --providers.docker.defaultrule=Host(`{{ index .Labels "com.docker.compose.service" }}.$DOMAIN`)
-      - --providers.docker.exposedByDefault=false
-      - --providers.docker.network=proxy_traefik
-      - --providers.docker.swarmMode=false
-      - --providers.file.directory=/traefik-dynamic
-      - --providers.file.watch=true
-      ### TLS options. Enables TLS for all services
-      - --entrypoints.https.http.tls.options=tls-opts@file # Add le-dns-cf as default certresolver for all services
-      - --entrypoints.https.http.tls.certresolver=le-dns-cf
-      - --entrypoints.https.http.tls.domains[0].main=$DOMAIN
-      - --entrypoints.https.http.tls.domains[0].sans=*.$DOMAIN
-      ### SSL Certificate configuration
-      - --certificatesResolvers.le-dns-cf.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
-      - --certificatesResolvers.le-dns-cf.acme.email=$ACME_EMAIL
-      - --certificatesResolvers.le-dns-cf.acme.storage=/acme.json
-      - --certificatesResolvers.le-dns-cf.acme.keyType='RSA4096'
-      - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.provider=cloudflare
-      - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.delaybeforecheck=10
-      - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
-    networks:
-      proxy_traefik:
-        ipv4_address: 172.20.200.1
-    security_opt:
-      - no-new-privileges:true
-    ports:
-      - target: 80
-        published: 80
-        protocol: tcp
-        mode: host
-      - target: 443
-        published: 443
-        protocol: tcp
-        mode: host
-      # - target: 8080
-      #   published: 8080
-      #   protocol: tcp
-      #   mode: host
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - $DOCKERDIR/config/traefik-dynamic:/traefik-dynamic
-      - $DOCKERDIR/config/acme.json:/acme.json
-      - $DOCKERDIR/logs/traefik:/logs
-      - $DOCKERDIR/shared:/shared
-    environment:
-      - CF_API_EMAIL=$CLOUDFLARE_EMAIL
-      - CF_API_KEY=$CLOUDFLARE_API_KEY
-      - DOMAIN
-      - TZ=$TZ
-    labels:
-      - 'traefik.enable=true'
-      # HTTP-to-HTTPS Redirect
-      - 'traefik.http.routers.http-catchall.entrypoints=http'
-      - 'traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)'
-      - 'traefik.http.routers.http-catchall.middlewares=redirect-to-https'
-      - 'traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https'
-      ### Routers
-      - 'traefik.http.routers.traefik-rtr.entrypoints=https'
-      - 'traefik.http.routers.traefik-rtr.rule=Host(`traefik.$DOMAIN`)'
-      - 'traefik.http.routers.traefik-rtr.tls=true'
-      - 'traefik.http.routers.traefik-rtr.tls.domains[0].main=$DOMAIN'
-      - 'traefik.http.routers.traefik-rtr.tls.domains[0].sans=*.$DOMAIN'
-      - 'traefik.http.routers.traefik-rtr.tls.certresolver=le-dns-cf' # Comment out this line after first run of traefik to force the use of wildcard certs
-      ## Middlewares
-      - 'traefik.http.routers.traefik-rtr.middlewares=chain-basic-auth@file'
-      # - 'traefik.http.middlewares.traefik-headers.headers.sslhost=traefik.$DOMAIN'
-      # - 'traefik.http.middlewares.traefik-headers.headers.sslforcehost=true'
-      ### Service
-      - 'traefik.http.routers.traefik-rtr.service=api@internal'
-
   watchtower: # WatchTower - Automatic Docker Container Updates
     <<: *common-keys-core # See EXTENSION FIELDS at the top
     image: containrrr/watchtower
@@ -223,13 +223,3 @@ services:
       WATCHTOWER_NO_STARTUP_MESSAGE: 'false'
       WATCHTOWER_SCHEDULE: '0 30 12 * * *' # Everyday at 12:30
       # DOCKER_HOST: tcp://socket-proxy:2375 # Use this if you have Socket Proxy enabled.
-
-  whoami: # For testing if traefik works
-    image: containous/whoami
-    container_name: whoami
-    networks:
-      - traefik-proxy
-    labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.routers.whoami.entrypoints=websecure'
-      - 'traefik.http.routers.whoami.rule=Host(`whoami.${DOMAIN}`)'
