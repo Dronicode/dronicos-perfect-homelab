@@ -2,8 +2,6 @@
 
 **TODO:**
 
-_- Add the other networks- .128/26, .192/26_
-
 # Create DOCKERDIR
 
 `sudo mkdir -p /opt/docker/{app,config,custom,logs,private,shared}`
@@ -44,5 +42,3 @@ sudo docker volume create portainer-data # Only needed for Portainer manager
 `--net=dronilab01b \`  
 `--ip=172.20.20.69 \`  
 `--name=ipv1 traefik/whoami`
-
-sudo docker run -itd --rm --net=dronilab01-vlan --name=ipv1 traefik/whoami
