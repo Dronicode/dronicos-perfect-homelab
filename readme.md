@@ -3,6 +3,11 @@
 I'm building a homelab. As my skills improve and as I can add or upgrade hardware, the homelab continues to evolve and grow.
 This repo contains everything that I do for each stage of this project.
 
+#### To pull the repo
+
+`cd ~`  
+`git clone https://github.com/Dronicode/dronicos-perfect-homelab.git`
+
 ---
 
 ## Installation
@@ -63,3 +68,13 @@ Media
 - Jellyfin
 
 **TODO:** _Add all the other planned containers._
+
+## My actual plan and TODO list
+
+/ reinstall the pi
+
+- Pihole needs a macvlan + unbound
+- IPvlan, is it even possible to connect other hosts to it?
+- jellyfin
+  / Traefik
+- Portainer - edge can't connect because of pihole
