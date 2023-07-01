@@ -14,8 +14,8 @@ api:
 certificatesResolvers:
   le-dns-cf: # Using LetsEncrypt + DNS challenge + Clouflare provider
     acme:
-      # caServer: https://acme-v02.api.letsencrypt.org/directory # Prod
-      caServer: https://acme-staging-v02.api.letsencrypt.org/directory # Staging
+      caServer: https://acme-v02.api.letsencrypt.org/directory # Prod
+      # caServer: https://acme-staging-v02.api.letsencrypt.org/directory # Staging
       dnschallenge:
         delaybeforecheck: 10
         provider: cloudflare

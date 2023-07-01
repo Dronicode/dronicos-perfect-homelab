@@ -26,8 +26,6 @@ services:
     image: traefik:2.10
     container_name: traefik
     restart: always
-    secrets:
-      - passwords
     security_opt:
       - no-new-privileges:true
     networks:
@@ -49,9 +47,8 @@ services:
       - $DOCKERDIR/private/:/private/
       - $DOCKERDIR/logs/traefik:/logs/
     environment:
-      CF_API_EMAIL: /run/secrets/passwords
-      CF_API_KEY: /run/secrets/passwords
-      # CLOUDFLARE_API_KEY: /run/secrets/my_secrets
+      CF_API_EMAIL: ${CF_API_EMAIL}
+      CF_API_KEY: ${CF_API_KEY}
     command: #CLI arguments - static config, use EITHER this, or traefik.yml
       - '--configFile=/traefik.yml'
     labels: # Dynamic config, can combine with /traefik-dynamic/*
@@ -69,7 +66,7 @@ services:
       - 'traefik.http.routers.traefik-rtr.tls.domains[0].sans=*.${DOMAIN}'
       # - 'traefik.http.routers.traefik-rtr.tls.certresolver=${CERT_RESOLVER}' # Comment out this line after first run of traefik to force the use of wildcard certs
       ## Middlewares
-      - 'traefik.http.routers.traefik-rtr.middlewares=chain-basic-auth@file'
+      - 'traefik.http.routers.traefik-rtr.middlewares=chain-no-auth@file'
       # - 'traefik.http.middlewares.traefik-headers.headers.sslhost=traefik.$DOMAIN'
       # - 'traefik.http.middlewares.traefik-headers.headers.sslforcehost=true'
       ### Services
@@ -82,8 +79,6 @@ services:
     depends_on:
       - traefik
     restart: always
-    secrets:
-      - passwords
     cap_add:
       - NET_ADMIN
     networks:
@@ -108,7 +103,7 @@ services:
       PIHOLE_DNS_2: 1.0.0.1 # Secondary upstream DNS provider
       DNSMASQ_LISTENING: all # permits listening on internet origin subnets in addition to local.
       FTLCONF_LOCAL_IPV4: ${HOSTIP} # Host's LAN IP, used by web block modes.
-      PIHOLE_WEBUIPASSWORD: /run/secrets/passwords
+      PIHOLE_WEBUI_PASSWORD: ${PIHOLE_WEBUI_PASSWORD}
       SKIPGRAVITYONBOOT: 1 # Boots faster for testing, just run gravity later.
       WEBTHEME: ${WEBTHEME}
     labels:
@@ -148,8 +143,7 @@ services:
       ## Routers
       - 'traefik.http.routers.portainer-rtr.entrypoints=websecure'
       - 'traefik.http.routers.portainer-rtr.rule=Host(`portainer.${DOMAIN}`)'
-      # - 'traefik.http.routers.portainer-rtr.tls=true'
-      - 'traefik.http.routers.portainer-rtr.tls.certresolver=${CERT_RESOLVER}'
+      - 'traefik.http.routers.portainer-rtr.tls=true'
       ## Middlewares
       # - 'traefik.http.routers.portainer-rtr.middlewares=chain-no-auth@file'
       ## Services
@@ -159,114 +153,7 @@ services:
       ## Routers
       - 'traefik.http.routers.edge-rtr.entrypoints=websecure'
       - 'traefik.http.routers.edge-rtr.rule=Host(`edge.${DOMAIN}`)'
-      # - 'traefik.http.routers.edge-rtr.tls=true'
-      - 'traefik.http.routers.edge-rtr.tls.certresolver=${CERT_RESOLVER}'
+      - 'traefik.http.routers.edge-rtr.tls=true'
       ## Services
       - 'traefik.http.routers.edge-rtr.service=edge-svc'
       - 'traefik.http.services.edge-svc.loadbalancer.server.port=8000'
-
-secrets:
-  passwords:
-    file: ./private/secrets.env
-
-  # whoami: # For testing purposes.
-  #   image: traefik/whoami
-  #   container_name: whoami
-  #   labels:
-  #     - 'traefik.enable=true'
-  #     - 'traefik.docker.network=proxy_traefik'
-  #     - 'traefik.http.routers.whoami.entrypoints=websecure'
-  #     - 'traefik.http.routers.whoami.rule=Host(`whoami-ama.${DOMAIN}`)'
-
-  # dockergc: # Docker-GC - Automatic Docker Garbage Collection
-  #   <<: *common-keys-apps # See EXTENSION FIELDS at the top
-  #   image: clockworksoul/docker-gc-cron:latest
-  #   container_name: docker-gc
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock # Use Docker Socket Proxy and comment this line for improved security.
-  #     - $DOCKERDIR/appdata/docker-gc/docker-gc-exclude:/etc/docker-gc-exclude # Create empty file
-  #   environment:
-  #     CRON: 0 0 0 * * ? # Everyday at midnight. Previously 0 0 * * *
-  #     FORCE_IMAGE_REMOVAL: 1
-  #     FORCE_CONTAINER_REMOVAL: 0
-  #     GRACE_PERIOD_SECONDS: 604800
-  #     DRY_RUN: 0
-  #     CLEAN_UP_VOLUMES: 1
-  #     TZ: $TZ
-  #     # DOCKER_HOST: tcp://socket-proxy:2375 # Use this if you have Socket Proxy enabled.
-
-  # dozzle: # Dozzle - Real-time Docker Log Viewer
-  #   <<: *common-keys-apps # See EXTENSION FIELDS at the top
-  #   image: amir20/dozzle:latest
-  #   container_name: dozzle
-  #   networks:
-  #     - npm_proxy
-  #   ports:
-  #     - '8081:8080' # qBittorrent is using port 8080.
-  #   environment:
-  #     DOZZLE_LEVEL: info
-  #     DOZZLE_TAILSIZE: 300
-  #     DOZZLE_FILTER: 'status=running'
-  #     # DOZZLE_FILTER: "label=log_me" # limits logs displayed to containers with this label.
-  #     # DOCKER_HOST: tcp://socket-proxy:2375 # Use this instead if you have Socket Proxy enabled.
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock # Use Docker Socket Proxy and comment this line for improved security.
-
-  # watchtower: # WatchTower - Automatic Docker Container Updates
-  #   <<: *common-keys-core # See EXTENSION FIELDS at the top
-  #   image: containrrr/watchtower
-  #   container_name: watchtower
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock # Use Docker Socket Proxy and comment this line for improved security.
-  #   environment:
-  #     TZ: $TZ
-  #     WATCHTOWER_CLEANUP: 'true'
-  #     WATCHTOWER_REMOVE_VOLUMES: 'true'
-  #     WATCHTOWER_INCLUDE_STOPPED: 'true'
-  #     WATCHTOWER_NO_STARTUP_MESSAGE: 'false'
-  #     WATCHTOWER_SCHEDULE: '0 30 12 * * *' # Everyday at 12:30
-  #     # DOCKER_HOST: tcp://socket-proxy:2375 # Use this if you have Socket Proxy enabled.
-# Traefik CMD
-
-### General settings
-# - --api=true
-# - --api.insecure=false
-# - --global.checkNewVersion=true
-# - --global.sendAnonymousUsage=false
-### Entry points
-# - --entryPoints.http.address=:80
-# - --entryPoints.https.address=:443
-# - --entryPoints.traefik.address=:8080 # Insecure API only
-# Allow these IPs to set the X-Forwarded-* headers - Cloudflare IPs: https://www.cloudflare.com/ips/
-# - --entrypoints.https.forwardedHeaders.trustedIPs=$CLOUDFLARE_IPS,$LOCAL_IPS
-### Logging
-# - --log=true
-# - --log.filePath=/logs/traefik.log
-# - --log.level=ERROR # (Default: ERROR) DEBUG, INFO, WARN, FATAL, PANIC
-# - --accessLog=true
-# - --accessLog.filePath=/logs/traefik-access.log
-# - --accessLog.bufferingSize=100
-# - --accessLog.filters.statusCodes=204-299,400-499,500-599
-### Providers
-# - --providers.docker=true
-# - --providers.docker.endpoint=unix:///var/run/docker.sock
-#- --providers.docker.endpoint=tcp://socket-proxy:2375 # Use this instead of the previous line if you have socket proxy.
-# - --providers.docker.defaultrule=Host(`{{ index .Labels "com.docker.compose.service" }}.$DOMAIN`)
-# - --providers.docker.exposedByDefault=false
-# - --providers.docker.network=proxy_traefik # NETWORK --------------
-# - --providers.docker.swarmMode=false
-# - --providers.file.directory=/traefik-dynamic
-# - --providers.file.watch=true
-### TLS options. Enables TLS for all services
-# - --entrypoints.https.http.tls.options=tls-opts@file # Add le-dns-cf as default certresolver for all services
-# - --entrypoints.https.http.tls.certresolver=le-dns-cf
-# - --entrypoints.https.http.tls.domains[0].main=$DOMAIN
-# - --entrypoints.https.http.tls.domains[0].sans=*.$DOMAIN
-### SSL Certificate configuration
-# - --certificatesResolvers.le-dns-cf.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
-# - --certificatesResolvers.le-dns-cf.acme.email=$ACME_EMAIL
-# - --certificatesResolvers.le-dns-cf.acme.storage=/private/acme.json
-# - --certificatesResolvers.le-dns-cf.acme.keyType='RSA4096'
-# - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.provider=cloudflare
-# - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.delaybeforecheck=10
-# - --certificatesResolvers.le-dns-cf.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53

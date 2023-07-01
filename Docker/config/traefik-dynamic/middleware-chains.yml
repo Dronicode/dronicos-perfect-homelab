@@ -6,7 +6,7 @@ http:
           - mw-rate-limit
           - mw-https-redirectscheme
           - mw-secure-headers
-          - mw-compression
+          # - mw-compression
 
     chain-basic-auth:
       chain:
@@ -15,4 +15,4 @@ http:
           - mw-https-redirectscheme
           - mw-secure-headers
           - mw-basic-auth
-          - mw-compression
+          # - mw-compression

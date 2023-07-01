@@ -5,8 +5,8 @@ http:
         usersFile: '/private/.htpasswd' # mount the volume in docker-compose
         realm: 'Traefik Basic Auth'
 
-    mw-compression:
-      compress: {}
+    # mw-compression:
+    #   compress: {}
 
     mw-https-redirectscheme:
       redirectScheme:
