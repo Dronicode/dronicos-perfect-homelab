@@ -1,100 +1,46 @@
 # Dronico's Perfect Docker
 
 There are two main ways to set this up- standalone Docker, or Swarm Mode.  
-In Standalone docker, each host is individual and unrelated to the others. A single Portainer instance can be used, with the others reporting to it via Edge Agent. Traefik will need to be installed on each device, but it is possible to set up a single Traefik instance using file providers.
+In **Standalone docker**, each host is individual and unrelated to the others. A single Portainer instance can be used, with the others reporting to it via Edge Agent. Traefik will need to be installed on each device though, because all containers need to exist on the same docker network for it to work.  
+This is where **Swarm Mode** comes in. Rather than dealing with individual hosts, they're all joined as nodes to a single cluster with one being a manager node. Resources like networks and mounted volumes can be shared among the whole cluster. Containers are deployed in stacks via the manager which then runs them on whichever node(s) are available. If a node goes down everything running on it will immediately be run on another host with minimal interruption.  
+Aside from gaining various benefits including high-availability services, Swarm Mode will enable a single instance of Traefik to handle all containers from all hosts.
 
-## Create DOCKERDIR
+## Install Docker
 
-This dir structure is helpful to keep all docker files and container application data.
+**TODO - install instructions**
 
-- app = appdata for each container
-- config = all config files, docker builds, custom scripts, and .env files
-- logs = keep all logfiles in one place
-- private = anything secret like certificates and passwords
+# Volumes and data management
 
-Aside from creating the folders,
+## DOCKERDIR
 
-`sudo mkdir -p /opt/docker/{app,config,logs,private}`  
+A lot of files are used for configuring and deploying stacks of docker containers and services. Those also produce data which we want to keep. It's a good idea to keep all of these files well organized in a single location. This folder containing everything will be referred to as DOCKERDIR and also used as an environment variable to be referenced more easily in scripts.
+
+This directory structure below is helpful to keep everything well organized and easy to manage:
+
+**/opt/docker/..**  
+**../config** = _(Config files, docker builds, custom scripts, and .env files)_  
+**../logs** = _(Log files from all containers and services)_  
+**../private** = _(Anything secret like certificates and passwords)_
+**../services** = _(Persistent appdata for all containers)_
+
+The script below will create the folders and set their permissions appropriately. We only need this on the host which will be the manager node. Alternatively, a separate file server can be used.
+
+`sudo mkdir -p /opt/docker/{services,config,logs,private}`  
 `sudo chmod 764 -R /opt/docker/`  
 `sudo chmod 600 /opt/docker/private`  
 `sudo setfacl -Rdm g:docker:rwx /opt/docker/`
 
-## Create acme file for LE SSL certs and secrets files
+All of the docker-compose.yml files will live in the root of DOCKERDIR and be easily accessible.
 
-`sudo install -m 600 /dev/null /opt/docker/private/acme.json`
+## Persistent volumes
 
-## Create networks
+Docker containers are stateless. This means that all the data and everything inside a container disappears as soon as it is stopped. In order to keep that data, folders need to be mounted between the host filesystem and the container. This is called persistent storage.
 
-Create networks outside of compose files so they remain even if the compose file is taken down.
+In swarm mode any container might run on any node, but they all need access to the same volumes in order to keep the data and configurations consistent across the cluster. To achieve this, the DOCKERDIR will be mounted as a distributed volume and replicated to all nodes using glusterFS.
 
-### Proxy network
+**TODO - volume mounting**
 
-Traefik uses different providers to handle endpoints (in this case, docker containers). While the file provider requires hardcoding internal IPs for each endpoint, the docker provider instead uses the name of a docker network and allows Traefik to dynamically identify all the containers on that network.  
-Ideally, one single docker network would be created as an overlay between all hosts for Traefik to easily use the Docker Provider for all containers on all hosts. This doesn't seem to be possible without using swarm mode though, so instead a network for each host will be created.  
-As Traefik won't be able to see the networks for other hosts, we'll use them for specifing an IP for each container and let Traefik find them using the file provider.
-
-This will be used by traefik and all containers from the same host.  
-`sudo docker network create \`  
-`--driver=bridge \`  
-`--attachable \`  
-`--subnet=172.20.20.0/27 \`  
-`proxy_traefik_ama`
-
-It would probably be ideal to have all hosts share a proxy network but I haven't managed to figure that out yet so we'll create one for each host.
-
-`sudo docker network create \`  
-`--driver=bridge \`  
-`--attachable \`  
-`--subnet=172.20.20.32/27 \`  
-`proxy_traefik_ame`
-
-### Macvlan network
-
-This is a special network needed by pihole.  
-This needs to be included in the primary network for pihole to work. The problem here is that the docker engine acts as its own DHCP server, so if you give the same IP range to this and the real DHCP server, you run the risk of these trying to assigning the same address to different devices.
-
-My solution is to trick it by providing the macvlan with just a small subnet within the same IP range as the primary network, then reserving those addresses on the real DHCP server.
-
-For example, if the primary network is 192.168.0.0/24 with the gateway at 192.168.0.1, then I might shave off the last few addresses from the end by reserving the address range .252-.255. Then the macvlan can be created in subnet 192.168.0.252/30 which fills that range. This gives space for 2 possible hosts in the macvlan (.253 and .254) which is all it needs.
-
-The same process can be repeated for a second pihole on another host using the next block of addresses, subnet .248/30.
-
-You also need to check which network interface device is used on the host where the network will be created. Usually this is eth0.
-
-`sudo docker network create \`  
-`--driver=macvlan \`  
-`--subnet=192.168.0.252/30 \`  
-`-o parent=eth0 \`  
-`macvlan_[hostname]`
-
-## Create volumes
-
-`sudo docker volume create portainer_data` # Only needed for Portainer manager
-
-## Portainer Edge
-
-Portainer edge is tricky to integrate correctly with traefik.
-
-The Edge Key needs to be modified as per these instructions:
-https://github.com/portainer/portainer-compose/issues/24#issuecomment-942389178
-https://github.com/portainer/portainer/issues/6251
-
-Use this for decode/ encode: https://www.base64encode.org/
-
-Additional notes and clarifications:
-
-- When creating the environment on Portainer, make sure to leave it with the default target address of portainer.\*.
-- tls.certresolver isn't needed in the flags, just tls=true, if wildcard SSL certs are used.
-
-Here's an example of a working string:
-https://portainer.example.net|https://edge.example.net|abcdefghijklmnopqrstuvwxyz1234567890=|2
-
-# Alternate: Docker Swarm Mode (Incomplete)
-
-**Missing: How to handle persistence and mounting volumes.**
-**Missing: Details on stack preparation and deployment.**
-
-## Provision a cluster (swarm)
+# Provision a swarm
 
 On the node which will be the manager, run:  
 `docker swarm init --advertise-addr <MANAGER-IP>`
@@ -118,19 +64,56 @@ Going forward, all commands need to be run on the manager node only.
 `docker node update --label-add <LABEL> <HOSTNAME>`  
 Eg: "docker node update --label-add media epic-media-server" (give the label 'media' to the worker who's hostname is 'epic-media-server')
 
-## Create an overlay network
+# Networking
 
-This network will enable conrainers on all nodes to communicate together. It will also be Traefik's proxy network.
+Networks can be created within compose files but its better to start them separately so they remain available to even if the compose file is taken down.
 
-`sudo docker network create --driver=overlay proxy_traefik`
+## Proxy network
 
-Optional: define specific subnet for the overlay network
+Traefik uses different providers to handle services (in this case, docker containers). The docker provider is what lets it manage docker containers using labels in the compose files. For that to work, Traefik needs to be on the same docker network as those containers in order to see them.
+
+In docker's normal mode, networks cannot be shared between hosts so Traefik would need to use a file provider to manage services on other hosts using a workaround with load balancing flags and assigning static IPs to all containers which requires a lot of unnecessary effort. With docker in swarm mode, one network can be shared between all hosts simplifying the process significantly.
+
+This script should be run on the manager node. will create the network called proxy_traefik and specify a subnet for it.
 
 `sudo docker network create \`  
 `--driver=overlay \`  
 `--subnet=172.20.20.0/24 \`  
 `proxy_traefik`
 
-## Deploy stacks
+## Macvlan network
+
+Pihole has special networking needs in order to perform its DNS functions correctly, and also needs to exist within the primary network. All of this can be met using macvlan.
+
+In docker we can create a macvlan network over the primary network so that the IP of anything in it also appears to belong to the other one. The issue here is that the docker engine acts as its own DHCP server and will potentially clash with the main DCHP server when assigning IPs. A workaround for this is to limit the macvlan to a very small IP range and then reserve that range on the router.
+
+For example, if the primary network is 192.168.0.0/24 with the gateway at 192.168.0.1, then I might shave off the last few addresses from the end by reserving the address range .252-.255. Then the macvlan can be created in subnet 192.168.0.252/30 which fills that range. This gives space for 2 possible hosts in the macvlan (.253 and .254) which is all it needs.
+
+The same process can be repeated for a second pihole on another host using the next block of addresses, subnet .248/30.
+
+You also need to check which network interface device is used on the host where the network will be created. Usually this is eth0.
+
+Because of this requirement, the pihole container must be constrained to only run on the node(s) where such a network has been created.
+
+`sudo docker network create \`  
+`--driver=macvlan \`  
+`--subnet=192.168.0.252/30 \`  
+`-o parent=eth0 \`  
+`macvlan_[hostname]`
+
+# Specific service preparation
+
+## Traefik preparation
+
+Lets Encrypt is a service which provides free SSL certificates for domains. This can be integrated with Traefik to make sure that all the services it routes use https rather than http.
+Create acme file for LE SSL certs and secrets files
+
+`sudo install -m 600 /dev/null /opt/docker/private/acme.json`
+
+## Portainer configuration
+
+`sudo docker volume create portainer_data` # Only needed for Portainer manager
+
+# Deployment
 
 A stack is the swarm version of a compose file.

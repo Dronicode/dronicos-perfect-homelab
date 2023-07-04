@@ -59,8 +59,7 @@ Container management
 
 Networking
 
-- Pihole (Or AdGuard Home?)
-- Dhcp-helper
+- Pihole
 - Unbound
 
 Media
