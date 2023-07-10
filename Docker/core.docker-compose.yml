@@ -2,32 +2,20 @@ version: '3.9'
 
 ########################### NETWORKS
 networks:
-  macvlan01:
-    name: macvlan01
-    driver: macvlan
-    driver_opts:
-      parent: eth0
-    ipam:
-      driver: default
-      config:
-        - subnet: ${MACVLAN_SUBNET_IP}
-          gateway: ${MACVLAN_GATEWAY_IP}
   proxy_traefik:
     name: proxy_traefik
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: ${PROXY_TRAEFIK_SUBNET_IP}
+    external: true
+  macvlan_01:
+    name: macvlan_01
+    external: true
 
 ########################### SERVICES
 services:
   traefik: # Traefik 2 - Reverse Proxy
     image: traefik:2.10
-    container_name: traefik
-    restart: always
-    security_opt:
-      - no-new-privileges:true
+    deploy:
+      placement:
+        constraints: [node.role == manager]
     networks:
       proxy_traefik:
         ipv4_address: ${TRAEFIK_IP}
@@ -42,10 +30,11 @@ services:
         mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - $DOCKERDIR/config/traefik-dynamic:/traefik-dynamic/
-      - $DOCKERDIR/config/traefik.yml:/traefik.yml
-      - $DOCKERDIR/private/:/private/
-      - $DOCKERDIR/logs/traefik:/logs/
+      - ./config/traefik/dynamic-configs:/dynamic-configs
+      - ./config/traefik/traefik.yml:/traefik.yml
+      - ./logs/traefik:/logs/
+      - ./private/acme.json:/acme.json
+      - ./private/.htpasswd:/.htpasswd
     environment:
       CF_API_EMAIL: ${CF_API_EMAIL}
       CF_API_KEY: ${CF_API_KEY}
@@ -64,7 +53,7 @@ services:
       - 'traefik.http.routers.traefik-rtr.tls=true'
       - 'traefik.http.routers.traefik-rtr.tls.domains[0].main=${DOMAIN}'
       - 'traefik.http.routers.traefik-rtr.tls.domains[0].sans=*.${DOMAIN}'
-      # - 'traefik.http.routers.traefik-rtr.tls.certresolver=${CERT_RESOLVER}' # Comment out this line after first run of traefik to force the use of wildcard certs
+      - 'traefik.http.routers.traefik-rtr.tls.certresolver=${CERT_RESOLVER}' # Comment out this line after first run of traefik to force the use of wildcard certs
       ## Middlewares
       - 'traefik.http.routers.traefik-rtr.middlewares=chain-no-auth@file'
       # - 'traefik.http.middlewares.traefik-headers.headers.sslhost=traefik.$DOMAIN'
@@ -72,67 +61,19 @@ services:
       ### Services
       - 'traefik.http.routers.traefik-rtr.service=api@internal'
 
-  pihole:
-    image: pihole/pihole:latest
-    container_name: pihole-01
-    hostname: ${HOSTNAME}
-    depends_on:
-      - traefik
-    restart: always
-    cap_add:
-      - NET_ADMIN
-    networks:
-      proxy_traefik:
-        ipv4_address: ${PIHOLE01_IP_TRAEFIK}
-      macvlan01:
-        ipv4_address: ${PIHOLE01_IP_MACVLAN}
-    ports: #Ignore port 80, it will go through Traefik. :53 TCP/UDP is required.
-      - '53:53/tcp'
-      - '53:53/udp'
-    dns:
-      - 127.0.0.1
-      - 1.1.1.1
-    volumes:
-      - '$DOCKERDIR/app/pihole/etc-pihole/:/etc/pihole/'
-      - '$DOCKERDIR/app/pihole/etc-dnsmasq.d/:/etc/dnsmasq.d/'
-      - '/etc/localtime:/etc/localtime:ro'
-    environment:
-      TZ: ${TZ} # Time zone, for log rotation.
-      VIRTUAL_HOST: pihole.${DOMAIN}
-      PIHOLE_DNS_1: 1.1.1.1 # Primary upstream DNS provider
-      PIHOLE_DNS_2: 1.0.0.1 # Secondary upstream DNS provider
-      DNSMASQ_LISTENING: all # permits listening on internet origin subnets in addition to local.
-      FTLCONF_LOCAL_IPV4: ${HOSTIP} # Host's LAN IP, used by web block modes.
-      PIHOLE_WEBUI_PASSWORD: ${PIHOLE_WEBUI_PASSWORD}
-      SKIPGRAVITYONBOOT: 1 # Boots faster for testing, just run gravity later.
-      WEBTHEME: ${WEBTHEME}
-    labels:
-      - 'traefik.enable=true'
-      - 'traefik.docker.network=proxy_traefik'
-      # web interface
-      ## Routers
-      - 'traefik.http.routers.pihole-rtr.entrypoints=websecure'
-      - 'traefik.http.routers.pihole-rtr.rule=Host(`pihole.${DOMAIN}`)'
-      - 'traefik.http.routers.pihole-rtr.tls=true'
-      ## Middlewares
-      - 'traefik.http.routers.pihole-rtr.middlewares=chain-no-auth@file'
-      ## Services
-      - 'traefik.http.services.pihole-svc.loadbalancer.server.port=80'
-
   portainer: # Portainer - WebUI for Containers
     image: portainer/portainer-ce:linux-arm64
-    container_name: portainer
+    deploy:
+      placement:
+        constraints: [node.role == manager]
     depends_on:
       - traefik
-    restart: always
-    security_opt:
-      - no-new-privileges:true
     networks:
       proxy_traefik:
         ipv4_address: ${PORTAINER_IP}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro # Use Docker Socket Proxy and comment this line out, for improved security.
-      - $DOCKERDIR/app/portainer/data:/data
+      - $DOCKERDIR/services/portainer/data:/data
     environment:
       - TZ=${TZ}
     command: -H unix:///var/run/docker.sock # Use this or Docker Socket Proxy

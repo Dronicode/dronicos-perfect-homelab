@@ -59,13 +59,13 @@ Confirm all nodes are joined to the swarm.
 `sudo docker node update --label-add <LABEL> <HOSTNAME>`  
 Eg: "sudo docker node update --label-add media epic-media-server" (give the label 'media' to the worker who's hostname is 'epic-media-server')
 
-# Volumes
+# Persistent storage
 
-Docker containers have no access to the host's file system, so if the service requires configuration files it not will have them when it starts. Containers are also stateless. This means that all the data and everything inside a container disappears as soon as it is stopped. In order to provide needed configuration files and keep any output data, folders need to be mounted between the host filesystem and the container. This is called persistent storage.
+Docker containers are stateless, they have no access to the host's file system by default. The services inside containers have no access to configuration files they need, and any output files disappear as soon as the container is stopped because. To provide needed configuration files and keep any output data, folders in the host filesystem need to be linked to the container filesystem. This gives it persistent storage. There are two different ways to provide persistent storage to a container- volumes, and bind mounts.
 
-Mounting files to a container gives it a link to read or write to those files in the host system. This can be done with bind mounts which directly refer to the path on the host system at runtime, or with volumes which can be configured separately from the container and referred by name or even re-used by other containers who need the same files. Volumes have several advantages and will be used here.
+Docker volumes are named objects managed by the docker engine and stored in /var/lib/docker/volumes/. They can be referred to by name and mounted in multiple containers at once. Bind mounts can be configured to directly reference any specific files or folders in the host filesystem which already exist and mount them to the container. Swarm mode is a little more complex, storage must be shared with all nodes so containers can mount the needed files on any node in the cluster. If using volumes, certain volume drivers like NFS and SSHFS can be used to share a volume with other nodes. This has some advantage for convenience but all the files remain on a single machine which then acts as a point of failure for all the others. Bind mounts do not have any built in solution for swarms, so the architect has to provide their own. A common 3rd party solution is to use glusterFS volumes which is more complex to set up than docker volumes but distributes the volume to all nodes resulting in a high availbility platform using replication.
 
-There is an additional challenge with swarm mode. Volumes need be shared or distributed somehow across the swarm to keep the data and configurations consistent between all nodes so containers function the same no matter on which node they run. Rather than sharing the volumes from a single source, I will use glusterFS to replicate and distribute the whole DOCKERDIR across all nodes then let each of them mount volumes from their local copy. This ensures high availability of data and less chance of corruption.
+Although docker volumes are powerful and convenient, we want to keep all our data in one single location and already will need to use bind mounts for many config files so it makes sense to use it for everything and also benefit from high availability and a lower chance of data corruption with glusterFS.
 
 ## Prepare hostname resolution
 
@@ -120,8 +120,20 @@ A glusterFS volume is a logical collection of bricks, which is the term used for
 First, we create the volume folder.  
 `sudo mkdir -p /gluster/volumes/`
 
-Second, we create the storage folder. This will be referred to as the DOCKERDIR because all docker-related files go inside it. Later we'll prepare some organization for everything that'll go in here. This is the mountpoint where gluster will be mounted to the filesystem.  
-`sudo mkdir -p /opt/docker/`
+Second, we create the storage folder. This is the mountpoint where gluster will be mounted to the filesystem. This will be referred to as the DOCKERDIR because all docker-related files go inside it. Later we'll prepare some subfolders for organizing the contents.  
+`sudo install -m 0774 -o root -g docker -d /opt/docker && sudo chmod g+s /opt/docker/`
+_Note: Use the install command to easily set the folder owner as root and the group as docker with 774 permissions. This is because we don't want anything but docker to be able to access and modify the files. We also use chmod to set the bit so any subfolders will automatically also belong to the docker group._
+
+This ownership setting will also be replicated to all nodes too, using docker's group ID (GID). Specifically, the GID of the docker group on the node where the command is run. A potential issue can arise if the docker group has a different ID on other nodes. If this happens, the folder permissions on them will show the GID but not be associated with Docker and then Docker won't be able to access the folder.  
+To check this, look at the group file on the manager node.  
+`cat /etc/group`  
+You'll find something like this: "docker:x:[GID]:". The number is the GID which owns DOCKERDIR. Run the same command on all the nodes and make sure docker also has the same GID on all of them.  
+If any are different, change them to match (Change the number as needed).  
+`sudo groupmod -d [GID] docker`  
+_**Warning:** Make sure that GID is not already in use. otherwise it can cause problems. Change that one first and then the one for docker. Also note all of the original IDs in case you have to change one back to try again._
+
+You may also find that you can't access DOCKERDIR any more if you're not working as root. Add your user to the docker.  
+`sudo usermod -aG docker [username]`
 
 ## Create the glusterFS volume itself.
 
@@ -134,7 +146,7 @@ This creates a replicated volume called 'dockerdir' at the location '/gluster/vo
 **For clusters with two nodes:** _An arbiter can be used to prevent split-brain errors but should also be put on a third node. It is possible to work around this by adding the arbiter as a second replica on one of the nodes. This solution works but is only a workaround and should be considered a temporary measure as it introduces other potential faults to the system._  
 _The command is almost the same as before with a couple extra bits. Note that the third replica will be the arbiter and not a real replica._  
 `sudo gluster volume create dockerdir replica 3 arbiter 1 [hostname1]:/gluster/volumes/ [hostname2]:/gluster/volumes/ [hostname1]:/gluster/volumes/arbiter/ force`  
-_Don't forget to create a dir for the arbiter brick._  
+_Don't forget to create a dir for the arbiter brick. It doesn't need to have all the extra permissions etc set because that will be inherited from the main one._  
 `sudo mkdir -p /opt/docker-arbiter/`
 
 Start the volume.  
@@ -142,13 +154,13 @@ Start the volume.
 
 Now that the volume has been created and started, it still needs to be mounted to the host filesystem. We'll also add it to the fstab file so it can be automounted every time the host starts up.
 
-## Mount the volume
+## Mount the volume to the host filesystem
 
 Add it to the fstab file for automounting.  
 _Note, editing the fstab file wrong can mess up the boot system. Make sure to copy it exactly and not change anything else._  
 `sudo vim /etc/fstab`
 
-At the bottom copy this onto the file
+At the bottom copy this onto the file.
 
 > \# glusterFS mount  
 > localhost:/dockerdir /opt/docker glusterfs defaults,\_netdev,backupvolfile-server=localhost 0 0
@@ -181,29 +193,11 @@ Here is a rundown of an optimal folder structure.
 **../private** = _(Anything secret like SSL certificates and passwords)_  
 **../services** = _(Persistent appdata for all containers)_
 
-First we should set ownership and permissions for DOCKERDIR
-**_[Only run this on the manager node]_**  
-`sudo chmod 4774 -R /opt/docker/`  
-`sudo chown root:docker /opt/docker/`
+When mounting these, never mount an entire folder. That will provide access for all the unrelated files to the container, which is bad practice. Rather, mount specific files and only folders when all the contents of the folder are relevant.
 
-This sets the owner as root and the group as docker. This is so docker can properly access and interact with all the files in the dir. This ownership will also be replicated to all nodes too, using docker's group ID (GID). A potential issue can arise if the docker group has a different ID on some nodes.  
-To check this, look at the group file on the manager node.  
-`cat /etc/group`  
-You'll find something like this: "docker:x:[GID]:". The number is the GID which owns DOCKERDIR. Run the same command on all the nodes and make sure docker also has the same GID on all of them.  
-If any are different, change them to match (Change the number as needed).  
-`sudo groupmod -d [GID] docker`  
-_**Warning:** Make sure that GID is not already in use. otherwise it can cause problems. Change that one first and then the one for docker._
-
-You may also find that you can't access DOCKERDIR any more. Add yourself to the docker group for access.
-`sudo usermod -aG docker [username]`
-
-Create the folders and set strict permissions for the secrets folder.  
-`sudo mkdir /opt/docker/{config,logs,private,services}`  
-`sudo chmod 600 /opt/docker/private`
-
-Also set permissions for it.
-
-Docker grp on AME = 965
+Create the folders and set stricter permissions for the private folder so only root has access.  
+`sudo install -m 0774 -d /opt/docker/{config,logs,services}`
+`sudo install -m 0770 -d /opt/docker/private`
 
 # Networking
 
@@ -240,26 +234,67 @@ Because of this requirement, the pihole container must be constrained to only ru
 `--driver=macvlan \`  
 `--subnet=192.168.0.252/30 \`  
 `-o parent=eth0 \`  
-`macvlan_ama[hostname]`
+`macvlan_01`
 
 ## Check networks
 
 Confirm all networks are created:  
 `sudo docker network ls`
 
-# Specific service preparation
+# Environment variables
 
-## Traefik preparation
+A lot of information in docker compose files is repeated many times or sensitive. Instead of updating each reference every time something gets changed or redacting it all before pushing it to github, a .env file is used to handle this data.  
+Before using swarm mode, I had to maintain a different version of .env for each host with the contents relevant to that host's containers. One advantage now is that only a sinlge .env is needed to provide variables for them all.
 
-Lets Encrypt is a service which provides free SSL certificates for domains. This can be integrated with Traefik to make sure that all the services it routes use https rather than http.
-Create acme file for LE SSL certs and secrets files
-
-`sudo install -m 600 /dev/null /opt/docker/private/acme.json`
-
-## Portainer configuration
-
-`sudo docker volume create portainer_data` # Only needed for Portainer manager
+Create it then paste in everything from the provided example.env, editing as needed.  
+`sudo vim /opt/docker/.env`
 
 # Deployment
 
-A stack is the swarm version of a compose file.
+Docker swarm works a lot like docker compose where a single command is used to deploy containers from a .yml script. A stack is a group of services all run as a collection. Usually stacks are grouped by purpose, for instance a stack for hosting a site might include the webserver and the database. Its mostly compatible with compose files so usually stacks are deployed from docker-compose.yml files but sometimes people use docker-stack.yml instead.
+
+Before deploying any stack, we need to add the prerequisite folders/ files to DOCKERDIR so they will be available for the bind mount. After that, the command syntax for deploying a stack is `sudo docker stack deploy -c [filename] [stack name]`.
+
+The first and most important stack to deploy is the core stack, comprising of Traefik and Portainer which will form the core infrastructure which manage all the other services in the cluster. After that, the rest are optional as needed.
+
+## Stack: Core
+
+### Dockerdir prep
+
+Add folders for Traefik config and logs.  
+`sudo install -m 0774 -d /opt/docker/{config/{traefik,/traefik/dynamic-configs},/logs/traefik}`
+
+Traefik is configured using a combination of static and dynamic configs, each of which can be included in files, or written directly into the docker compose file. Here, the static config is 100% in file form (it cannot be mixed and matched with file and docker flags), while the dynamic configs are mostly defined in the compose files in the 'labels' section of each service but also some dynamic configs are used for middlewares etc.
+
+Copy everything from the /config/traefik folder in the repo into DOCKERDIR. It'll be something like this.  
+$DOCKERDIR/config/traefik/traefik.yml  
+$DOCKERDIR/config/traefik/dynamic-configs/<traefik-dynamic and multiple other .yml files>
+
+Traefik uses Lets Encrypt, a service which provides free SSL certificates for domains to route all the services with https rather than http. Everything is configured already, just create the file acme.json to contain the certificates. This is very sensitive information which must be kept safe so we'll add very strict permissions to it.  
+`sudo install -m 600 /dev/null /opt/docker/private/acme.json`  
+Sometimes it throws an error if the file is completely blank so edit it with {} to make the json work.  
+`echo "{}" | sudo tee /opt/docker/private/acme.json`
+
+Traefik can also provide basic HTTP authentication. Later on it'll be made redundant by using a better auth middleware, but it doesn't hurt as a place to start.  
+Create a password file.  
+`touch /opt/docker/private/.htpasswd`  
+The password needs to be encrypted using the .htpasswd command. This depends on an apache package, so install it.  
+**_Raspberry Pi OS (Debian)_**  
+`sudo apt install apache2-utils`  
+**_Arch_**  
+`sudo pacman -S apache`  
+When installed, edit the following command and run it.  
+`echo $(htpasswd -nb <username> <strongpassword>) | sed -e s/\$/\$\$/g`  
+The output will look like <username>:$<random letters and numbers>$. Paste that into the .htpasswd file.
+
+That's Traefik's folders prepared, Portainer is easier. It just needs one data folder.  
+`sudo install -m 0774 -d /opt/docker/services/portainer/data`
+
+One line in Traefik's config in docker-compose.yml needs to be there the first time it runs, but isn't needed after. The line is this:  
+_#- 'traefik.http.routers.traefik-rtr.tls.certresolver=${CERT_RESOLVER}'_  
+This is where Traefik will contact the servers and obtain a wildcard certificate for the domain. Remove the initial # to uncomment it.
+
+`sudo docker stack deploy -c core.docker-compose.yml core`
+
+Check if it worked.
+`docker stack services core`

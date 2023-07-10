@@ -2,7 +2,7 @@ http:
   middlewares:
     mw-basic-auth:
       basicAuth:
-        usersFile: '/private/.htpasswd' # mount the volume in docker-compose
+        usersFile: '/.htpasswd' # Don't forget to mount it in docker-compose
         realm: 'Traefik Basic Auth'
 
     # mw-compression:

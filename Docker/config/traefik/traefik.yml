@@ -22,7 +22,7 @@ certificatesResolvers:
         resolvers: ['1.1.1.1:53', '1.0.0.1:53']
       email: luffy.obrien+letsencrypt@outlook.com
       keyType: RSA4096
-      storage: /private/acme.json
+      storage: /acme.json
 
 entryPoints:
   web:
@@ -93,5 +93,5 @@ providers:
     network: proxy_traefik
     swarmMode: false
   file:
-    directory: /traefik-dynamic
+    directory: /dynamic-configs
     watch: true
