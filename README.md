@@ -1,5 +1,8 @@
 # Dronico's Perfect Homelab
 
+
+## This is all old and needs fixing
+
 I'm building a homelab. As my skills improve and as I can add or upgrade hardware, the homelab continues to evolve and grow. This repo contains everything that I do for each stage of this project.
 
 #### To pull the repo:
